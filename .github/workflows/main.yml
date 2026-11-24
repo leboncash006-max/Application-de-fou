@@ -7,16 +7,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: if [ ! -d app ]; then unzip -o ./*.zip; fi
+
+      - name: Trouver le projet (dossier déjà extrait, ou zip le plus récent)
+        run: |
+          set -e
+          DIR=$(find . -name settings.gradle.kts -not -path './.git/*' -not -path './_extract/*' -printf '%h\n' | head -1)
+          if [ -z "$DIR" ]; then
+            ZIP=$(find . -maxdepth 3 -name '*.zip' -not -path './.git/*' -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
+            echo "Zip utilisé : $ZIP"
+            [ -n "$ZIP" ] || { echo "Aucun zip ni projet trouvé"; exit 1; }
+            mkdir -p _extract
+            unzip -o -q "$ZIP" -d _extract
+            DIR=$(find _extract -name settings.gradle.kts -printf '%h\n' | head -1)
+          fi
+          echo "Projet : $DIR"
+          echo "PROJECT_DIR=$DIR" >> "$GITHUB_ENV"
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.7
-      - run: gradle assembleDebug --no-daemon
+
+      - name: Build APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: gradle assembleDebug --no-daemon
+
       - uses: actions/upload-artifact@v4
         with:
           name: QuiJeVote-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
